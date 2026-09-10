@@ -48,7 +48,7 @@ if not GEMINI_API_KEY:
 # GEMINI
 # =========================================================
 
-GEMINI_MODEL = "gemini-3.5-flash-lite"
+GEMINI_MODEL = "gemini-1.5-flash"
 
 gemini_client = None
 
@@ -391,12 +391,8 @@ def draw_pose(frame, result):
 
 def process_frame(frame):
 
-
-
-    # Keep clean frame for Gemini
     raw_frame = frame.copy()
 
-    # BGR -> RGB
     rgb = cv2.cvtColor(
         frame,
         cv2.COLOR_BGR2RGB
@@ -409,22 +405,12 @@ def process_frame(frame):
 
     current_timestamp = get_timestamp()
 
-
-    # =====================================================
-    # HANDS
-    # =====================================================
-
     hand_result = (
         gesture_recognizer.recognize_for_video(
             mp_image,
             current_timestamp
         )
     )
-
-
-    # =====================================================
-    # FACE
-    # =====================================================
 
     face_result = (
         face_landmarker.detect_for_video(
@@ -433,22 +419,12 @@ def process_frame(frame):
         )
     )
 
-
-    # =====================================================
-    # POSE
-    # =====================================================
-
     pose_result = (
         pose_landmarker.detect_for_video(
             mp_image,
             current_timestamp
         )
     )
-
-
-    # =====================================================
-    # COUNTS
-    # =====================================================
 
     hands = len(
         hand_result.hand_landmarks
@@ -466,11 +442,6 @@ def process_frame(frame):
         else 0
     )
 
-
-    # =====================================================
-    # SAVE DETECTION + FRAME
-    # =====================================================
-
     with lock:
 
         latest_detection["hands"] = hands
@@ -480,11 +451,6 @@ def process_frame(frame):
         frame_buffer.append(
             raw_frame
         )
-
-
-    # =====================================================
-    # DRAW LANDMARKS
-    # =====================================================
 
     draw_hands(
         frame,
@@ -500,11 +466,6 @@ def process_frame(frame):
         frame,
         pose_result
     )
-
-
-    # =====================================================
-    # STATUS TEXT
-    # =====================================================
 
     cv2.putText(
         frame,
@@ -536,7 +497,6 @@ def process_frame(frame):
         2
     )
 
-
     return frame
 
 
@@ -557,7 +517,6 @@ def receive_frame():
             "error": "No camera frame received."
         }), 400
 
-
     try:
 
         file = request.files["frame"]
@@ -571,20 +530,15 @@ def receive_frame():
                 "error": "Empty camera frame."
             }), 400
 
-
-        # Convert bytes -> NumPy array
         np_array = np.frombuffer(
             image_bytes,
             np.uint8
         )
 
-
-        # Decode JPEG
         frame = cv2.imdecode(
             np_array,
             cv2.IMREAD_COLOR
         )
-
 
         if frame is None:
 
@@ -593,31 +547,20 @@ def receive_frame():
                 "error": "Could not decode camera frame."
             }), 400
 
-
-        # Process with MediaPipe
         process_frame(frame)
 
-
-        # Return latest detection
         with lock:
 
             detection = {
-                "hands":
-                    latest_detection["hands"],
-
-                "face":
-                    latest_detection["face"],
-
-                "pose":
-                    latest_detection["pose"]
+                "hands": latest_detection["hands"],
+                "face": latest_detection["face"],
+                "pose": latest_detection["pose"]
             }
-
 
         return jsonify({
             "success": True,
             "detection": detection
         })
-
 
     except Exception as e:
 
@@ -721,24 +664,14 @@ def parse_ai_response(text):
     field_map = {
 
         "Gesture": "gesture",
-
         "Hands": "hands",
-
         "Movement": "movement",
-
         "Face": "face",
-
         "Pose": "pose",
-
-        "Possible PSL Meaning":
-            "possible_psl_meaning",
-
+        "Possible PSL Meaning": "possible_psl_meaning",
         "English": "english",
-
         "Urdu": "urdu",
-
         "Confidence": "confidence",
-
         "Explanation": "explanation"
     }
 
@@ -794,26 +727,18 @@ def analyze_gesture():
 
     global latest_ai_result
 
-
     if not gemini_client:
 
         return jsonify({
             "success": False,
-            "error":
-                "Gemini API key is not configured."
+            "error": "Gemini API key is not configured."
         }), 500
-
-
-    # =====================================================
-    # GET FRAME BUFFER
-    # =====================================================
 
     with lock:
 
         all_frames = list(
             frame_buffer
         )
-
 
     if len(all_frames) < 3:
 
@@ -824,21 +749,14 @@ def analyze_gesture():
                 "Please wait a moment and try again."
         }), 400
 
-
-    # =====================================================
-    # SELECT 8 REPRESENTATIVE FRAMES
-    # =====================================================
-
     if len(all_frames) >= 8:
 
         indices = [
-
             int(
                 i *
                 (len(all_frames) - 1) /
                 7
             )
-
             for i in range(8)
         ]
 
@@ -851,13 +769,7 @@ def analyze_gesture():
 
         sequence = all_frames
 
-
-    # =====================================================
-    # CONVERT FRAMES TO JPEG
-    # =====================================================
-
     image_parts = []
-
 
     for frame in sequence:
 
@@ -870,10 +782,8 @@ def analyze_gesture():
             ]
         )
 
-
         if not success:
             continue
-
 
         image_parts.append(
             types.Part.from_bytes(
@@ -882,34 +792,20 @@ def analyze_gesture():
             )
         )
 
-
     if not image_parts:
 
         return jsonify({
             "success": False,
-            "error":
-                "Could not prepare camera frames."
+            "error": "Could not prepare camera frames."
         }), 500
-
-
-    # =====================================================
-    # MEDIAPIPE INFORMATION
-    # =====================================================
 
     with lock:
 
         detection_info = (
-
-            f"Hands detected: "
-            f"{latest_detection['hands']}/2\n"
-
-            f"Face detected: "
-            f"{latest_detection['face']}/1\n"
-
-            f"Pose detected: "
-            f"{latest_detection['pose']}/1"
+            f"Hands detected: {latest_detection['hands']}/2\n"
+            f"Face detected: {latest_detection['face']}/1\n"
+            f"Pose detected: {latest_detection['pose']}/1"
         )
-
 
     prompt = (
         GEMINI_PROMPT
@@ -918,64 +814,44 @@ def analyze_gesture():
         + detection_info
     )
 
+    contents = (
+        image_parts
+        + [
+            types.Part.from_text(
+                text=prompt
+            )
+        ]
+    )
 
-    # =====================================================
-    # SEND TO GEMINI
-    # =====================================================
-
-    try:
-
-        contents = (
-            image_parts
-            + [
-                types.Part.from_text(
-                    text=prompt
-                )
-            ]
-        )
-
-
-        response = (
-            gemini_client.models.generate_content(
+    # Exponential backoff retry loop for 503 errors
+    max_retries = 3
+    for attempt in range(max_retries):
+        try:
+            response = gemini_client.models.generate_content(
                 model=GEMINI_MODEL,
                 contents=contents
             )
-        )
 
+            text = response.text.strip()
+            parsed = parse_ai_response(text)
+            latest_ai_result = parsed
 
-        text = response.text.strip()
+            return jsonify({
+                "success": True,
+                "result": parsed
+            })
 
-
-        # =================================================
-        # PARSE
-        # =================================================
-
-        parsed = parse_ai_response(
-            text
-        )
-
-
-        latest_ai_result = parsed
-
-
-        return jsonify({
-            "success": True,
-            "result": parsed
-        })
-
-
-    except Exception as e:
-
-        print(
-            "Gemini analysis error:",
-            e
-        )
-
-
-        return jsonify({
-            "success": False,
-            "error": str(e)
-        }), 500
+        except Exception as e:
+            if "503" in str(e) or "UNAVAILABLE" in str(e):
+                if attempt < max_retries - 1:
+                    time.sleep(2 ** attempt)
+                    continue
+            
+            print("Gemini analysis error:", e)
+            return jsonify({
+                "success": False,
+                "error": "Gemini API is temporarily overloaded. Please try again in a few seconds."
+            }), 503
 
 
 # =========================================================
@@ -1044,14 +920,8 @@ if __name__ == "__main__":
 
     print("Camera: Browser camera mode")
     print("MediaPipe: Hands + Face + Pose")
-    print(
-        "Gemini:",
-        GEMINI_MODEL
-    )
-
-    print(
-        "Server: http://127.0.0.1:5000"
-    )
+    print("Gemini:", GEMINI_MODEL)
+    print("Server: http://127.0.0.1:5000")
 
     app.run(
         host="127.0.0.1",
